@@ -53,7 +53,7 @@ function audio() {
 }
 function checkAudio() { banner.style.display = ctx && ctx.state === "running" ? "none" : "block"; }
 
-// Honk sound file (decoded once, falls back to a synthesized horn if it fails)
+// Plays the sound file and the synthesized horn together
 let honkBuf = null;
 const honkData = fetch("/honk.m4a").then((r) => r.arrayBuffer()).catch(() => null);
 async function loadHonk() {
@@ -71,9 +71,9 @@ function playHorn() {
   loadHonk();
   if (honkBuf) {
     const src = c.createBufferSource(); src.buffer = honkBuf;
-    src.connect(c.destination); src.start(); flash(); return;
+    src.connect(c.destination); src.start();
   }
-  synthHorn(c);
+  synthHorn(c); // synthesized horn plays together with the sound file
 }
 function synthHorn(c) {
   const t = c.currentTime, dur = 0.7;
