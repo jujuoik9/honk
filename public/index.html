@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Shared Horn</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+    background:#14161c;color:#e8e8ee;font-family:system-ui,sans-serif;user-select:none;touch-action:manipulation}
+  #btn{width:min(70vw,360px);aspect-ratio:1;border-radius:50%;border:0;cursor:pointer;
+    font-size:clamp(28px,8vw,48px);font-weight:800;color:#fff;letter-spacing:.05em;
+    background:radial-gradient(circle at 35% 30%,#ff7a6b,#e0261a 60%,#a11208);
+    box-shadow:0 12px 0 #6e0c04,0 20px 40px rgba(0,0,0,.5);transition:transform .06s,box-shadow .06s}
+  #btn:active,#btn.pressed{transform:translateY(10px);box-shadow:0 2px 0 #6e0c04,0 8px 20px rgba(0,0,0,.5)}
+  #status{font-size:14px;opacity:.7;text-align:center;min-height:2.6em}
+  #banner{position:fixed;top:0;left:0;right:0;padding:10px;text-align:center;background:#f5b301;color:#222;
+    font-weight:600;display:none}
+  .wave{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle,rgba(255,80,60,.35),transparent 60%);
+    opacity:0;transition:opacity .4s}
+  .wave.on{opacity:1;transition:none}
+  #join{position:fixed;inset:0;background:#14161c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:10}
+  #join input{font-size:20px;padding:12px 16px;border-radius:10px;border:2px solid #444;background:#1d2029;color:#fff;width:min(80vw,300px);text-align:center}
+  #join button,#reset{font-size:18px;padding:12px 24px;border-radius:10px;border:0;background:#3b82f6;color:#fff;font-weight:700;cursor:pointer}
+  #reset{background:#444;font-size:15px;padding:10px 18px}
+  #first{font-size:20px;font-weight:700;min-height:1.4em;color:#ffd54a;text-align:center}
+</style>
+</head>
+<body>
+<div id="banner">🔇 Tap anywhere to enable sound</div>
+<div class="wave" id="wave"></div>
+<form id="join"><h2>🚗 Shared Horn</h2><input id="name" maxlength="20" placeholder="Your name" autocomplete="nickname" required><button>Join</button></form>
+<div id="first"></div>
+<button id="btn" aria-label="Honk the horn">HONK</button>
+<div id="status">Connecting…</div>
+<button id="reset">↺ Reset</button>
+
+<script>
+const btn = document.getElementById("btn"), statusEl = document.getElementById("status"),
+      banner = document.getElementById("banner"), wave = document.getElementById("wave");
+let ctx, ws, online = 0, myName = null;
+const firstEl = document.getElementById("first"), joinForm = document.getElementById("join"), nameIn = document.getElementById("name");
+const showFirst = (n) => (firstEl.textContent = n ? `🥇 ${n} honked first!` : "Nobody has honked yet");
+showFirst(null);
+try { nameIn.value = localStorage.getItem("hornName") || ""; } catch {}
+
+function audio() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state !== "running") ctx.resume().then(checkAudio);
+  return ctx;
+}
+function checkAudio() { banner.style.display = ctx && ctx.state === "running" ? "none" : "block"; }
+
+// Synthesized two-tone car horn
+function playHorn() {
+  const c = audio(); if (c.state !== "running") { checkAudio(); return; }
+  const t = c.currentTime, dur = 0.7;
+  const master = c.createGain();
+  master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(0.45, t + 0.02);
+  master.gain.setValueAtTime(0.45, t + dur - 0.08);
+  master.gain.linearRampToValueAtTime(0, t + dur);
+  const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
+  master.connect(lp).connect(c.destination);
+  [[392, 0.5], [494, 0.5], [784, 0.12]].forEach(([f, g]) => {
+    const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.value = f;
+    o.detune.value = (Math.random() - 0.5) * 12;
+    const og = c.createGain(); og.gain.value = g;
+    o.connect(og).connect(master); o.start(t); o.stop(t + dur + 0.05);
+  });
+  wave.classList.add("on"); setTimeout(() => wave.classList.remove("on"), 120);
+  btn.classList.add("pressed"); setTimeout(() => btn.classList.remove("pressed"), 120);
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+function setStatus() {
+  statusEl.textContent = ws && ws.readyState === 1
+    ? `${online} ${online === 1 ? "person" : "people"} connected — everyone hears every honk`
+    : "Disconnected — reconnecting…";
+}
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
+  ws.onopen = () => { setStatus(); if (myName) ws.send(JSON.stringify({ type: "join", name: myName })); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.type === "joined") { joinForm.style.display = "none"; showFirst(m.first); }
+    else if (m.type === "honk") { showFirst(m.first); playHorn(); }
+    else if (m.type === "reset") { showFirst(null); }
+    else if (m.type === "error") { myName = null; joinForm.style.display = "flex"; }
+    else if (m.type === "count") { online = m.n; setStatus(); }
+  };
+  ws.onclose = () => { setStatus(); setTimeout(connect, 1500); };
+}
+function honk() {
+  audio();
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "honk" }));
+}
+joinForm.addEventListener("submit", (e) => {
+  e.preventDefault(); audio();
+  myName = nameIn.value.trim(); if (!myName) return;
+  try { localStorage.setItem("hornName", myName); } catch {}
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "join", name: myName }));
+});
+document.getElementById("reset").addEventListener("click", () => {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" }));
+});
+btn.addEventListener("pointerdown", (e) => { e.preventDefault(); honk(); });
+document.addEventListener("pointerdown", () => audio(), { passive: true });
+document.addEventListener("keydown", (e) => { if (e.target.tagName === "INPUT") return; if (e.code === "Space" && !e.repeat) { e.preventDefault(); honk(); } });
+connect();
+setTimeout(checkAudio, 500);
+</script>
+</body>
+</html>
