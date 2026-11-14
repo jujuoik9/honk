@@ -48,13 +48,34 @@ try { nameIn.value = localStorage.getItem("hornName") || ""; } catch {}
 function audio() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state !== "running") ctx.resume().then(checkAudio);
+  loadHonk();
   return ctx;
 }
 function checkAudio() { banner.style.display = ctx && ctx.state === "running" ? "none" : "block"; }
 
-// Synthesized two-tone car horn
+// Honk sound file (decoded once, falls back to a synthesized horn if it fails)
+let honkBuf = null;
+const honkData = fetch("/honk.m4a").then((r) => r.arrayBuffer()).catch(() => null);
+async function loadHonk() {
+  if (honkBuf || !ctx) return;
+  const d = await honkData; if (!d) return;
+  try { honkBuf = await ctx.decodeAudioData(d.slice(0)); } catch {}
+}
+function flash() {
+  wave.classList.add("on"); setTimeout(() => wave.classList.remove("on"), 120);
+  btn.classList.add("pressed"); setTimeout(() => btn.classList.remove("pressed"), 120);
+  if (navigator.vibrate) navigator.vibrate(80);
+}
 function playHorn() {
   const c = audio(); if (c.state !== "running") { checkAudio(); return; }
+  loadHonk();
+  if (honkBuf) {
+    const src = c.createBufferSource(); src.buffer = honkBuf;
+    src.connect(c.destination); src.start(); flash(); return;
+  }
+  synthHorn(c);
+}
+function synthHorn(c) {
   const t = c.currentTime, dur = 0.7;
   const master = c.createGain();
   master.gain.setValueAtTime(0, t);
@@ -69,9 +90,7 @@ function playHorn() {
     const og = c.createGain(); og.gain.value = g;
     o.connect(og).connect(master); o.start(t); o.stop(t + dur + 0.05);
   });
-  wave.classList.add("on"); setTimeout(() => wave.classList.remove("on"), 120);
-  btn.classList.add("pressed"); setTimeout(() => btn.classList.remove("pressed"), 120);
-  if (navigator.vibrate) navigator.vibrate(80);
+  flash();
 }
 
 function setStatus() {

@@ -8,6 +8,13 @@ const INDEX = path.join(__dirname, "public", "index.html");
 
 const server = http.createServer((req, res) => {
   if (req.url === "/healthz") { res.writeHead(200); return res.end("ok"); }
+  if (req.url.split("?")[0] === "/honk.m4a") {
+    return fs.readFile(path.join(__dirname, "public", "honk.m4a"), (err, data) => {
+      if (err) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { "Content-Type": "audio/mp4", "Cache-Control": "public, max-age=86400" });
+      res.end(data);
+    });
+  }
   fs.readFile(INDEX, (err, data) => {
     if (err) { res.writeHead(500); return res.end("error"); }
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
